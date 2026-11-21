@@ -3,17 +3,19 @@ from sqlalchemy.orm import Session
 from fastapi import Response,status,HTTPException,Depends,FastAPI, APIRouter
 from typing import List,Optional
 from ..database import get_db
+from sqlalchemy import func
 
 router = APIRouter(
     prefix="/posts",
     tags=["Posts"]
 )
 
-@router.get("/",response_model=list[schemas.Post])
+@router.get("/",response_model=list[schemas.PostOut])
 def get_posts(db: Session = Depends(get_db),current_user: model.User = Depends(oauth2.get_current_user), limit: int = 10, skip: int = 0, search: Optional[str] = ""):
     # cursor.execute("""SELECT * FROM posts""")
     # posts=cursor.fetchall()
-    posts = db.query(model.Post).filter(model.Post.title.contains(search)).limit(limit).offset(skip).all()
+    
+    posts = db.query(model.Post,func.count(model.Vote.post_id).label('votes')).join(model.Vote,model.Vote.post_id==model.Post.id,isouter=True).group_by(model.Post.id).filter(model.Post.title.contains(search)).limit(limit).offset(skip).all() # by default left inner join
     return posts
 
 
@@ -31,11 +33,11 @@ def create_post(post: schemas.PostCreate,db: Session = Depends(get_db), current_
     return new_post
 
 
-@router.get("/{id}",response_model=schemas.Post)
+@router.get("/{id}",response_model=schemas.PostOut)
 def get_post(id: int,response: Response,db: Session = Depends(get_db),current_user: model.User = Depends(oauth2.get_current_user)):
     # cursor.execute("""SELECT * FROM posts WHERE id= %s""",(str(id),))
     # post=cursor.fetchone()
-    post = db.query(model.Post).filter(model.Post.id == id).first()
+    post=db.query(model.Post,func.count(model.Vote.post_id).label('votes')).join(model.Vote,model.Vote.post_id==model.Post.id,isouter=True).group_by(model.Post.id).filter(model.Post.id==id).first()
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"post with id: {id} was not found")
 
